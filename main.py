@@ -67,6 +67,12 @@ class NoteApp(QMainWindow):
         reset_zoom_action = self.menu.addAction("Reset Zoom", self.reset_zoom)
         reset_zoom_action.setShortcut("Ctrl+0")
 
+        fullscreen_action = self.menu.addAction("Toggle Fullscreen", self.toggle_fullscreen)
+        fullscreen_action.setShortcut("F11")
+
+        windowed_fullscreen_action = self.menu.addAction("Toggle Windowed Fullscreen", self.toggle_windowed_fullscreen)
+        windowed_fullscreen_action.setShortcut("Ctrl+F11")
+
 
 
         self.current_folder = None
@@ -120,7 +126,7 @@ class NoteApp(QMainWindow):
                 f.write(self.text_editor.toPlainText())
                 self.statusBar().showMessage("File Saved!", 2000)
 
-
+    #Functions for zooming
     def scale_tree(self, zoom_level):
         """Adjusts the font size of the tree view based on the zoom level."""
         new_font_size = max(8, 12 + zoom_level)  # Ensure font size is at least 8
@@ -138,6 +144,20 @@ class NoteApp(QMainWindow):
     def reset_zoom(self):
         self.text_editor.reset_zoom()
         self.scale_tree(self.text_editor.zoom_level)
+
+    def toggle_fullscreen(self):
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
+
+    def toggle_windowed_fullscreen (self):
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
+
+    
 
 
 
