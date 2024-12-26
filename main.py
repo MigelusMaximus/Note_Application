@@ -4,12 +4,37 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QListWidget,
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QTextCursor, QFont
 
+import json
 
+
+
+# Config files for saving the last opened file
+def load_config():
+    """Load configuration from config.json, or return default structure."""
+    default_config = {
+        "last_opened_folder": None,
+        "favorite_folders": {}
+    }
+    try:
+        with open("config.json", "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        # If the file doesn't exist or is corrupted, return the default config
+        return default_config
+
+def save_config(config):
+    """Save configuration to config.json."""
+    with open("config.json", "w") as f:
+        json.dump(config, f, indent=4)  # Use indent for readability
+
+
+#Main class for Note App Layout and Functionality
 class NoteApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Super Ultra Mega Note APP")
         self.resize(800, 600)
+
 
 
 
@@ -20,11 +45,21 @@ class NoteApp(QMainWindow):
         self.file_list.setMaximumWidth(800)
         self.file_list.setSizePolicy(QListWidget().sizePolicy())
          """
-
         # Sidebar Tree
         self.file_tree = QTreeWidget()
         self.file_tree.setHeaderHidden(True)
         self.file_tree.itemClicked.connect(self.load_file)
+
+            # Load configuration
+        self.config = load_config()
+        self.current_folder = self.config.get("last_opened_folder")
+
+        # Automatically load last opened folder
+        if self.current_folder:
+            self.load_folder(self.current_folder)
+        else:
+            self.statusBar().showMessage("No folder was previously loaded.", 2000)
+
 
 
 
@@ -56,6 +91,13 @@ class NoteApp(QMainWindow):
         save_action = self.menu.addAction("Save", self.save_file)
         save_action.setShortcut("Ctrl+S")
 
+        # Add "Home" menu
+        home_menu = self.menuBar().addMenu("Home")
+
+        # Add actions to view and manage favorites
+        view_favorites_action = home_menu.addAction("View Favorites", self.show_favorites)
+        add_favorite_action = home_menu.addAction("Add to Favorites", self.prompt_add_favorite)
+
 
         # Zoom In and Zoom Out shortcuts
         zoom_in_action = self.menu.addAction("Zoom In", self.zoom_in)
@@ -73,9 +115,58 @@ class NoteApp(QMainWindow):
         windowed_fullscreen_action = self.menu.addAction("Toggle Windowed Fullscreen", self.toggle_windowed_fullscreen)
         windowed_fullscreen_action.setShortcut("Ctrl+F11")
 
+           # Automatically load last opened folder
+        if self.current_folder:
+            self.load_folder(self.current_folder)
 
+       
 
-        self.current_folder = None
+    def add_favorite(self, label, folder_path):
+                """Add a folder shortcut to the favorites."""
+                if "favorite_folders" not in self.config:
+                    self.config["favorite_folders"] = {}  # Ensure the key exists
+
+                self.config["favorite_folders"][label] = folder_path
+                save_config(self.config)
+                self.statusBar().showMessage(f"Added '{label}' to favorites.", 2000)
+
+    def remove_favorite(self, label):
+            """Remove a folder shortcut from the favorites."""
+            if "favorite_folders" in self.config and label in self.config["favorite_folders"]:
+                del self.config["favorite_folders"][label]
+                save_config(self.config)
+                self.statusBar().showMessage(f"Removed '{label}' from favorites.", 2000)
+
+    def load_favorite(self, label):
+            """Load a folder from the favorites."""
+            if "favorite_folders" in self.config and label in self.config["favorite_folders"]:
+                folder_path = self.config["favorite_folders"][label]
+                self.load_folder(folder_path)
+            else:
+                self.statusBar().showMessage(f"Favorite '{label}' not found.", 2000)
+
+    def show_favorites(self):
+            """Display a list of favorites for quick access."""
+            if "favorite_folders" not in self.config or not self.config["favorite_folders"]:
+                self.statusBar().showMessage("No favorites available.", 2000)
+                return
+
+            from PyQt5.QtWidgets import QInputDialog
+            labels = list(self.config["favorite_folders"].keys())
+            label, ok = QInputDialog.getItem(self, "Select Favorite", "Choose a folder to open:", labels, editable=False)
+            if ok and label:
+                self.load_favorite(label)
+    def prompt_add_favorite(self):
+            """Prompt the user to add a folder to favorites."""
+            folder = QFileDialog.getExistingDirectory(self, "Select Folder to Add to Favorites")
+            if not folder:
+                return
+
+            from PyQt5.QtWidgets import QInputDialog
+            label, ok = QInputDialog.getText(self, "Add Favorite", "Enter a label for this folder:")
+            if ok and label:
+                self.add_favorite(label, folder)
+
 
     def open_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder")
@@ -85,6 +176,8 @@ class NoteApp(QMainWindow):
             # Use invisibleRootItem to add top-level items
             root_item = self.file_tree.invisibleRootItem()
             self.add_items_to_tree(root_item, folder)
+            self.config["last_opened_folder"] = folder
+            save_config(self.config)
 
 
     def add_items_to_tree(self, parent_item, folder):
@@ -102,23 +195,44 @@ class NoteApp(QMainWindow):
                 file_item = QTreeWidgetItem([item])
                 file_item.setIcon(0, self.style().standardIcon(2))  # File icon
                 parent_item.addChild(file_item)  # Add file as a child
+    def load_folder(self, folder):
+        """Reusable method to load a folder into the sidebar."""
+        if not folder:
+            self.statusBar().showMessage("No folder specified.", 2000)
+            return
 
+        self.current_folder = folder
+        self.file_tree.clear()
+        root_item = self.file_tree.invisibleRootItem()
+        self.add_items_to_tree(root_item, folder)
 
     def load_file(self, item):
+        # Ensure that a folder is loaded
+        if not self.current_folder:
+            self.statusBar().showMessage("No folder loaded. Please open a folder first.", 2000)
+            return
+
         # Get the file path by traversing the tree structure
         path = [item.text(0)]
         parent = item.parent()
         while parent is not None:
             path.insert(0, parent.text(0))
             parent = parent.parent()
+        
+        # Join the folder path with the item path
         file_path = os.path.join(self.current_folder, *path)
 
         # Load the file content into the text editor
         if os.path.isfile(file_path):
-            with open(file_path, 'r') as f:
-                content = f.read()
-                self.text_editor.setPlainText(content)
-                self.current_file = file_path
+            try:
+                with open(file_path, 'r') as f:
+                    content = f.read()
+                    self.text_editor.setPlainText(content)
+                    self.current_file = file_path
+            except Exception as e:
+                self.statusBar().showMessage(f"Error opening file: {str(e)}", 2000)
+        else:
+            self.statusBar().showMessage("Selected item is not a valid file.", 2000)
 
     def save_file(self):
         if hasattr(self, 'current_file'):
@@ -197,7 +311,7 @@ class ZoomableTextEdit(QTextEdit):
             self.note_app.scale_tree(self.zoom_level)  # Notify parent
 
     def reset_zoom(self):
-        self.zoom_level = 0
+        self.zoom_level = 0 
         self.update_font_size()
         self.note_app.scale_tree(self.zoom_level)  # Notify parent
 
